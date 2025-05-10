@@ -1,0 +1,77 @@
+(function() {
+  // Map from answer DOM elements to whether they're correct
+  let answerCorrectness = new WeakMap();
+  let correctAnswer = null;
+  let firstIncorrectAnswer = null;
+
+  function updateAnswerMap() {
+    answerCorrectness = new WeakMap();
+    correctAnswer = null;
+    firstIncorrectAnswer = null;
+    
+    const answers = document.querySelectorAll('[class^="submit_form_"].btn.answer');
+    answers.forEach(answer => {
+      const ngRepeatEl = answer.closest('[ng-repeat="opcion in currentTest.opciones"]');
+      if (!ngRepeatEl) return;
+      const scope = angular.element(ngRepeatEl).scope();
+      if (!scope || !scope.opcion) return;
+      
+      const isCorrect = scope.opcion.respuestaSN !== 0;
+      answerCorrectness.set(answer, isCorrect);
+      
+      if (isCorrect && !correctAnswer) correctAnswer = answer;
+      if (!isCorrect && !firstIncorrectAnswer) firstIncorrectAnswer = { answer, scope };
+    });
+  }
+
+  // Block clicks on incorrect answers
+  document.addEventListener('click', function(e) {
+    const answer = e.target.closest('[class^="submit_form_"].btn.answer');
+    if (answer && answerCorrectness.has(answer) && !answerCorrectness.get(answer)) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true);
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    const key = e.key.toLowerCase();
+    
+    // P = Correct answer
+    if (key === 'p' && correctAnswer) {
+      correctAnswer.click();
+      e.preventDefault();
+    }
+    
+    // L = First incorrect answer
+    if (key === 'l' && firstIncorrectAnswer) {
+      const parentScope = angular.element(document.querySelector('.question')).scope();
+      parentScope.sendResponse({
+        response: firstIncorrectAnswer.scope.opcion.opcion,
+        test_id: parentScope.currentTest.preguntaCodigo,
+        isKeyboard: false
+      });
+      e.preventDefault();
+    }
+  });
+
+  // Observe for question changes
+  const questionContainer = document.querySelector('.question');
+  if (questionContainer) {
+    const observer = new MutationObserver(() => {
+      setTimeout(updateAnswerMap, 10);
+    });
+    observer.observe(questionContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+  }
+
+  // Initial setup
+  setTimeout(updateAnswerMap, 200);
+  window.addEventListener('hashchange', () => setTimeout(updateAnswerMap, 200));
+  window.addEventListener('popstate', () => setTimeout(updateAnswerMap, 200));
+
+  console.log('Script active: P=correct, L=first incorrect');
+})();
