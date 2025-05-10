@@ -1,0 +1,59 @@
+(function() {
+  // Track correct and first incorrect answer elements
+  let correctAnswer = null;
+  let firstIncorrectAnswer = null;
+
+  function updateAnswerMap() {
+    correctAnswer = null;
+    firstIncorrectAnswer = null;
+    
+    const answers = document.querySelectorAll('[class^="submit_form_"].btn.answer');
+    answers.forEach(answer => {
+      const ngRepeatEl = answer.closest('[ng-repeat="opcion in currentTest.opciones"]');
+      if (!ngRepeatEl) return;
+      const scope = angular.element(ngRepeatEl).scope();
+      if (!scope || !scope.opcion) return;
+      
+      const isCorrect = scope.opcion.respuestaSN !== 0;
+      if (isCorrect && !correctAnswer) correctAnswer = answer;
+      if (!isCorrect && !firstIncorrectAnswer) firstIncorrectAnswer = answer;
+    });
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    const key = e.key.toLowerCase();
+    
+    // P or G = Correct answer
+    if ((key === 'p' || key === 'g') && correctAnswer) {
+      correctAnswer.click();
+      e.preventDefault();
+    }
+    
+    // L = First incorrect answer
+    if (key === 'l' && firstIncorrectAnswer) {
+      firstIncorrectAnswer.click();
+      e.preventDefault();
+    }
+  });
+
+  // Observe for question changes
+  const questionContainer = document.querySelector('.question');
+  if (questionContainer) {
+    const observer = new MutationObserver(() => {
+      setTimeout(updateAnswerMap, 10);
+    });
+    observer.observe(questionContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+  }
+
+  // Initial setup
+  setTimeout(updateAnswerMap, 200);
+  window.addEventListener('hashchange', () => setTimeout(updateAnswerMap, 200));
+  window.addEventListener('popstate', () => setTimeout(updateAnswerMap, 200));
+
+  console.log('Script active: P/G=correct, L=first incorrect, just like real clicks!');
+})();
