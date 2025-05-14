@@ -1,0 +1,104 @@
+(function() {
+  let correctAnswer = null;
+  let originalTextMap = new WeakMap();
+  let subtleMarkingEnabled = true;
+  let styleTag = null;
+
+  // Inject or remove the CSS for white-space: pre-wrap
+  function setWhiteSpaceCSS(enable) {
+    if (enable) {
+      if (!styleTag) {
+        styleTag = document.createElement('style');
+        styleTag.textContent = `.texto-respuesta { white-space: pre-wrap !important; }`;
+        document.head.appendChild(styleTag);
+      }
+    } else {
+      if (styleTag) {
+        styleTag.remove();
+        styleTag = null;
+      }
+    }
+  }
+
+  function subtlyMarkCorrectIfAnswered() {
+    // If marking is disabled, restore all answers to original text and exit
+    if (!subtleMarkingEnabled) {
+      setWhiteSpaceCSS(false);
+      const answers = document.querySelectorAll('[class^="submit_form_"].btn.answer');
+      answers.forEach(answer => {
+        const textDiv = answer.querySelector('.texto-respuesta');
+        if (textDiv && originalTextMap.has(textDiv)) {
+          textDiv.innerHTML = originalTextMap.get(textDiv);
+        }
+      });
+      return;
+    } else {
+      setWhiteSpaceCSS(true);
+    }
+
+    correctAnswer = null;
+    // Remove previous subtle mark from all answers
+    const answers = document.querySelectorAll('[class^="submit_form_"].btn.answer');
+    answers.forEach(answer => {
+      // Restore original text if we changed it before
+      const textDiv = answer.querySelector('.texto-respuesta');
+      if (textDiv && originalTextMap.has(textDiv)) {
+        textDiv.innerHTML = originalTextMap.get(textDiv);
+      }
+      // Find correct answer
+      const ngRepeatEl = answer.closest('[ng-repeat="opcion in currentTest.opciones"]');
+      if (!ngRepeatEl) return;
+      const scope = angular.element(ngRepeatEl).scope();
+      if (!scope || !scope.opcion) return;
+      if (scope.opcion.respuestaSN !== 0 && !correctAnswer) correctAnswer = answer;
+    });
+
+    // Find the current question scope to check if an answer is selected
+    const questionScopeEl = document.querySelector('.question [ng-repeat="opcion in currentTest.opciones"]');
+    if (!questionScopeEl) return;
+    const scope = angular.element(questionScopeEl).scope();
+    if (!scope || !scope.$parent || !scope.$parent.currentTest) return;
+
+    // Check if an answer has been selected
+    const selected = scope.$parent.currentTest.respuesta;
+    if (selected != null && selected !== '' && correctAnswer) {
+      const textDiv = correctAnswer.querySelector('.texto-respuesta');
+      if (textDiv) {
+        // Save original if not already saved
+        if (!originalTextMap.has(textDiv)) {
+          originalTextMap.set(textDiv, textDiv.innerHTML);
+        }
+        // Add two non-breaking spaces between the first two words
+        textDiv.innerHTML = textDiv.innerHTML.replace(/^(\s*\S+)(\s+)(\S+)/, '$1&nbsp;&nbsp;$3');
+      }
+    }
+  }
+
+  // Observe for changes in the .question container
+  const questionContainer = document.querySelector('.question');
+  if (questionContainer) {
+    const observer = new MutationObserver(() => {
+      setTimeout(subtlyMarkCorrectIfAnswered, 10);
+    });
+    observer.observe(questionContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+  }
+
+  // Also rerun on navigation or hash changes (for SPA)
+  window.addEventListener('hashchange', () => setTimeout(subtlyMarkCorrectIfAnswered, 200));
+  window.addEventListener('popstate', () => setTimeout(subtlyMarkCorrectIfAnswered, 200));
+
+  // Initial setup: enable marking and CSS
+  setTimeout(subtlyMarkCorrectIfAnswered, 200);
+
+  // Toggle subtle marking and CSS on scroll wheel forwards (down)
+  window.addEventListener('wheel', function(event) {
+    if (event.deltaY > 0) { // Scroll wheel forwards (down)
+      subtleMarkingEnabled = !subtleMarkingEnabled;
+      subtlyMarkCorrectIfAnswered();
+    }
+  }, { passive: true }); // passive for performance
+})();
