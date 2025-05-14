@@ -1,0 +1,97 @@
+(function() {
+  if (!document.getElementById('aeol-space-style')) {
+    const style = document.createElement('style');
+    style.id = 'aeol-space-style';
+    style.textContent = `.texto-respuesta { white-space: pre-wrap !important; }`;
+    document.head.appendChild(style);
+  }
+
+  let markingEnabled = true;
+  let lastQuestion = null;
+  let questionObserver = null;
+  let bodyObserver = null;
+
+  function markCorrectAnswer() {
+    // Restore all answers to original
+    document.querySelectorAll('.texto-respuesta').forEach(div => {
+      if (div.dataset.aeolOriginal) {
+        div.innerHTML = div.dataset.aeolOriginal;
+      }
+    });
+
+    if (!markingEnabled) return;
+
+    // Find correct answer index
+    let correctIndex = -1;
+    try {
+      const scope = angular.element(document.querySelector('[ng-repeat="opcion in currentTest.opciones"]')).scope();
+      if (scope && scope.currentTest && Array.isArray(scope.currentTest.opciones)) {
+        scope.currentTest.opciones.forEach((op, idx) => {
+          if (op.respuestaSN !== 0) correctIndex = idx;
+        });
+      }
+    } catch (e) {}
+
+    // Add double space to the correct answer
+    const answers = document.querySelectorAll('[class^="submit_form_"].btn.answer');
+    if (correctIndex !== -1 && answers[correctIndex]) {
+      const textDiv = answers[correctIndex].querySelector('.texto-respuesta');
+      if (textDiv) {
+        if (!textDiv.dataset.aeolOriginal) {
+          textDiv.dataset.aeolOriginal = textDiv.innerHTML;
+        }
+        if (!textDiv.innerHTML.includes('&nbsp;&nbsp;')) {
+          textDiv.innerHTML = textDiv.innerHTML.replace(
+            /^(\s*\S+)(\s+)(\S+)/,
+            '$1&nbsp;&nbsp;$3'
+          );
+        }
+      }
+    }
+  }
+
+  // Observe for question changes and reapply marking
+  bodyObserver = new MutationObserver(() => {
+    const currentQuestion = document.querySelector('.question');
+    if (currentQuestion !== lastQuestion) {
+      lastQuestion = currentQuestion;
+      if (questionObserver) questionObserver.disconnect();
+      if (currentQuestion) {
+        questionObserver = new MutationObserver(() => setTimeout(markCorrectAnswer, 10));
+        questionObserver.observe(currentQuestion, { childList: true, subtree: true });
+        markCorrectAnswer();
+      }
+    }
+  });
+  bodyObserver.observe(document.body, { childList: true, subtree: true });
+
+  // Also reapply on SPA navigation
+  window.addEventListener('hashchange', () => setTimeout(markCorrectAnswer, 100));
+  window.addEventListener('popstate', () => setTimeout(markCorrectAnswer, 100));
+
+  // Scroll wheel toggles marking
+  window.addEventListener('wheel', function(event) {
+    if (event.deltaY > 0) {
+      markingEnabled = !markingEnabled;
+      markCorrectAnswer();
+    }
+  }, { passive: true });
+
+  // Initial marking
+  markCorrectAnswer();
+
+  // Cleanup function
+  window.stopQuizMarker = function() {
+    if (bodyObserver) bodyObserver.disconnect();
+    if (questionObserver) questionObserver.disconnect();
+    document.querySelectorAll('.texto-respuesta').forEach(div => {
+      if (div.dataset.aeolOriginal) {
+        div.innerHTML = div.dataset.aeolOriginal;
+        delete div.dataset.aeolOriginal;
+      }
+    });
+    const style = document.getElementById('aeol-space-style');
+    if (style) style.remove();
+    console.log("Quiz marker stopped.");
+  };
+})();
