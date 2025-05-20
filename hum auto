@@ -1,0 +1,148 @@
+(function() {
+    let busy = false;
+    let questionsToGetWrong = [];
+    let questionNumber = 1;
+    const QUESTIONS_PER_TEST = 30;
+
+    function chooseWrongQuestions(howMany, total) {
+        const chosen = [];
+        while (chosen.length < howMany) {
+            const pick = Math.floor(Math.random() * total) + 1;
+            if (!chosen.includes(pick)) chosen.push(pick);
+        }
+        return chosen.sort((a, b) => a - b);
+    }
+
+    function waitForElement(selector, callback, timeout = 5000) {
+        const start = Date.now();
+        (function check() {
+            const el = document.querySelector(selector);
+            if (el) callback(el);
+            else if (Date.now() - start < timeout) setTimeout(check, 100);
+        })();
+    }
+
+    function randomPause(min, max) {
+        return new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
+    }
+
+    async function answerQuestion() {
+        if (busy) return;
+        busy = true;
+        waitForElement('[ng-repeat="opcion in currentTest.opciones"]', async (container) => {
+            const scope = angular.element(container).scope();
+            if (!scope?.currentTest?.opciones) {
+                busy = false;
+                setTimeout(answerQuestion, 1000);
+                return;
+            }
+            let thinkTime = Math.floor(Math.random() * 4000) + 2000;
+            if (Math.random() < 0.15) thinkTime += Math.floor(Math.random() * 2000);
+            await randomPause(thinkTime, thinkTime);
+            if (Math.random() < 0.1) await randomPause(1000, 2000);
+            const getThisWrong = questionsToGetWrong.includes(questionNumber);
+            let clicked = false;
+            scope.currentTest.opciones.forEach((option, idx) => {
+                if (clicked) return;
+                const isCorrect = option.respuestaSN !== 0;
+                const shouldPick = getThisWrong ? !isCorrect : isCorrect;
+                if (shouldPick) {
+                    waitForElement(`.submit_form_${idx + 1}.btn.answer`, async (button) => {
+                        clicked = true;
+                        await randomPause(500, 2000);
+                        button.click();
+                        goToNext();
+                    });
+                }
+            });
+        });
+    }
+
+    function goToNext() {
+        let pause = Math.floor(Math.random() * 2000) + 1000;
+        if (Math.random() < 0.1) pause += Math.floor(Math.random() * 2000);
+        setTimeout(() => {
+            waitForElement('.qnum.ng-binding', (qnumElem) => {
+                questionNumber = parseInt(qnumElem.textContent);
+                if (questionNumber === QUESTIONS_PER_TEST) {
+                    finishTest();
+                } else {
+                    clickNext();
+                }
+            });
+        }, pause);
+    }
+
+    function clickNext() {
+        let pause = Math.floor(Math.random() * 1700) + 800;
+        setTimeout(() => {
+            waitForElement('#siguiente:not([style*="display: none"])', (nextBtn) => {
+                nextBtn.click();
+                busy = false;
+                setTimeout(answerQuestion, Math.floor(Math.random() * 1500) + 700);
+            });
+        }, pause);
+    }
+
+    function finishTest() {
+        let pause = Math.floor(Math.random() * 1800) + 1200;
+        setTimeout(() => {
+            waitForElement('div.finalizar#disable:not(.ng-hide)', (finishBtn) => {
+                finishBtn.click();
+                setTimeout(clickNextTest, 2000);
+            });
+        }, pause);
+    }
+
+    function clickNextTest() {
+        waitForElement('div.send.resultado_error', (nextTestBtn) => {
+            if (nextTestBtn.textContent.toLowerCase().includes("siguiente test")) {
+                let pause = Math.floor(Math.random() * 2000) + 2000;
+                if (Math.random() < 0.12) pause += Math.floor(Math.random() * 1500);
+                setTimeout(() => {
+                    nextTestBtn.click();
+                    setTimeout(() => {
+                        busy = false;
+                        setupForNewTest();
+                    }, Math.floor(Math.random() * 2000) + 4000);
+                }, pause);
+            }
+        });
+    }
+
+    function decideMistakeCount() {
+        const weights = [0.1, 0.2, 0.3, 0.38, 0.02];
+        const r = Math.random();
+        let sum = 0;
+        for (let i = 0; i < weights.length; i++) {
+            sum += weights[i];
+            if (r < sum) return i;
+        }
+        return 3;
+    }
+
+    function setupForNewTest() {
+        if (window.quizObserver) window.quizObserver.disconnect();
+        const numWrong = decideMistakeCount();
+        questionsToGetWrong = chooseWrongQuestions(numWrong, QUESTIONS_PER_TEST);
+        questionNumber = 1;
+        window.quizObserver = new MutationObserver(() => {
+            if (!busy) answerQuestion();
+        });
+        window.quizObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        answerQuestion();
+    }
+
+    waitForElement('[ng-app]', () => {
+        setupForNewTest();
+    });
+
+    window.stopAutomation = () => {
+        if (window.quizObserver) {
+            window.quizObserver.disconnect();
+        }
+    };
+})();
